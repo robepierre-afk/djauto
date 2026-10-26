@@ -1,0 +1,47 @@
+# Optional: run AI Model Scout in GitHub's cloud every week, even when your machine is off.
+# Add secrets under Settings -> Secrets and variables -> Actions (all optional):
+#   ANTHROPIC_API_KEY, YOUTUBE_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, HF_TOKEN
+# Reports are committed to ai-model-scout/reports/ so you keep a history and "NEW" tracking works.
+name: AI Model Scout
+
+on:
+  schedule:
+    - cron: "0 5 * * 0"   # Sundays 05:00 UTC (07:00 SAST)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  scout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ai-model-scout
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Run scout
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -m scout
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ai-model-scout-report
+          path: ai-model-scout/reports/
+      - name: Commit report
+        run: |
+          git config user.name "ai-model-scout"
+          git config user.email "ai-model-scout@users.noreply.github.com"
+          git add -f reports/
+          git diff --cached --quiet || git commit -m "AI Model Scout report $(date +%F)"
+          git push

@@ -1,0 +1,92 @@
+# AI Model Scout configuration.
+# Copy to config.toml and edit. Secrets (API keys, Telegram token) go in .env, not here.
+
+[machine]
+# Your media machine. Used to tell you which models will actually run on it.
+name = "Media machine"
+gpu_vram_gb = 24        # e.g. RTX 4090 = 24, RTX 5090 = 32, 2x 3090 = 48, Mac M-series = unified memory
+system_ram_gb = 64      # used for CPU/GPU offload (llama.cpp, Ollama, LM Studio)
+unified_memory = false  # true for Apple Silicon: VRAM and RAM are the same pool
+
+[report]
+output_dir = "reports"
+lookback_days = 14      # how far back "latest" goes for news and new releases
+max_llms = 25
+max_music = 30
+max_news = 40
+# Hide models that need a licence click-through on Hugging Face (they're still free, just gated).
+hide_gated = false
+# Hide models whose licence forbids commercial use (common for music models, e.g. MusicGen weights).
+hide_non_commercial = false
+
+[huggingface]
+# Labs whose new open-weight LLM releases are always worth checking.
+llm_authors = [
+  "Qwen", "deepseek-ai", "meta-llama", "mistralai", "google", "zai-org", "moonshotai",
+  "MiniMaxAI", "openai", "microsoft", "nvidia", "allenai", "NousResearch", "ibm-granite",
+  "tencent", "baidu", "stepfun-ai", "XiaomiMiMo", "inclusionAI", "LiquidAI", "CohereLabs",
+  "ByteDance-Seed", "meituan-longcat", "unsloth",
+]
+# Free-text searches for music models.
+music_searches = [
+  "music generation", "musicgen", "song generation", "text-to-music", "singing voice",
+  "ACE-Step", "YuE", "DiffRhythm", "stable-audio", "music transcription", "piano transcription",
+  "midi", "chord recognition", "beat tracking", "music tagging", "stem separation", "demucs",
+  "MERT", "sheet music", "optical music recognition", "music score",
+]
+music_pipeline_tags = ["text-to-audio", "audio-to-audio", "text-to-speech"]
+# Ignore anything older than this many days when it isn't on the watchlist.
+max_age_days = 365
+
+[github]
+music_queries = [
+  "topic:music-generation", "topic:music-transcription", "topic:music-information-retrieval",
+  "topic:optical-music-recognition", "topic:music-source-separation", "topic:symbolic-music",
+  "music generation model weights", "sheet music transcription",
+]
+min_stars = 50
+
+[youtube]
+# Channels are checked via their free RSS feed (no API key needed).
+# Use the @handle from the channel URL, or a UC... channel id.
+channels = [
+  "@matthew_berman", "@aiexplained-official", "@TwoMinutePapers", "@YannicKilcher",
+  "@samwitteveenai", "@engineerprompt", "@bycloudAI", "@Fireship", "@WesRoth",
+  "@mreflow", "@AICodeKing", "@NateHerk",
+]
+# Only keep channel videos whose title matches one of these (case-insensitive).
+title_keywords = [
+  "open source", "open-source", "open weight", "local", "llama", "qwen", "deepseek", "mistral",
+  "gemma", "glm", "kimi", "gpt-oss", "ollama", "lm studio", "gguf", "beats", "vs claude",
+  "vs gpt", "music", "song", "suno", "udio", "midi", "audio",
+]
+# Searches run only if YOUTUBE_API_KEY is set (free quota is plenty for weekly use).
+searches = [
+  "best open source LLM", "best local LLM", "open weights model beats GPT",
+  "open source AI music generator", "local AI music generation", "AI music transcription sheet music",
+]
+
+[reddit]
+subreddits = ["LocalLLaMA", "LocalLLM", "MachineLearning", "StableDiffusion", "aimusic", "WeAreTheMusicMakers"]
+# Keep posts from music subs only if they mention one of these.
+music_keywords = ["model", "open source", "open-source", "weights", "local", "github", "hugging"]
+
+[hackernews]
+queries = ["open weights", "open-source LLM", "local LLM", "music generation model", "AI music open source"]
+
+[arxiv]
+# Recent research for music AI (code + weights often follow).
+queries = ['cat:cs.SD AND (abs:music AND abs:generation)', 'abs:"music transcription"', 'abs:"optical music recognition"']
+max_results = 15
+
+[analyst]
+# Optional: a written weekly briefing by Claude, which also searches the web for fresh
+# benchmark results (LMArena, Artificial Analysis, etc.). Needs ANTHROPIC_API_KEY in .env.
+enabled = true
+model = "claude-opus-5-5"
+effort = "medium"
+max_searches = 12
+
+[notify]
+# Telegram summary when the report is ready. Needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env.
+telegram = true
