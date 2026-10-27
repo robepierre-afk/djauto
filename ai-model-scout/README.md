@@ -45,6 +45,12 @@ copy .env.example .env                          # then add any keys you have (al
 If the machine is off at the scheduled time, the task runs the next time it starts up. To pick a
 different day or time, run `.\scripts\Install-ScoutTask.ps1 -Day Saturday -Time 09:30`.
 
+To update to the latest version later (your `config.toml`, `.env` and reports are kept):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\Update-Scout.ps1
+```
+
 ## Setup (Linux / macOS)
 
 ```bash

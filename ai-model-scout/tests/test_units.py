@@ -81,6 +81,28 @@ class Hardware(unittest.TestCase):
         self.assertEqual(self.assess(c), "check")
 
 
+class DotEnv(unittest.TestCase):
+    def test_inline_comments_are_not_values(self):
+        import os
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        from scout.config import _load_dotenv
+        text = ("YOUTUBE_API_KEY=        # Google Cloud console -> YouTube\n"
+                "GITHUB_TOKEN=ghp_abc  # note\n"
+                "TELEGRAM_CHAT_ID=\"-100 # 5\"\n"
+                "HF_TOKEN=\n")
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {}, clear=True):
+            env = Path(d) / ".env"
+            env.write_text(text)
+            _load_dotenv(env)
+            self.assertNotIn("YOUTUBE_API_KEY", os.environ)
+            self.assertEqual(os.environ["GITHUB_TOKEN"], "ghp_abc")
+            self.assertEqual(os.environ["TELEGRAM_CHAT_ID"], "-100 # 5")
+            self.assertNotIn("HF_TOKEN", os.environ)
+
+
 class Markdown(unittest.TestCase):
     def test_basic(self):
         h = md_to_html("## Head\n\n- **Bold** [link](https://x.y)\n- two\n\nPara <b>")

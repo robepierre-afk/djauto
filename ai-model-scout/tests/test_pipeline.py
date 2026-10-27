@@ -195,6 +195,17 @@ class Pipeline(unittest.TestCase):
         self.assertTrue(any(e.startswith("Reddit") for e in report.errors))
         self.assertTrue(report.runnable)
 
+    def test_rejected_github_token_falls_back_to_anonymous(self):
+        self.cfg["secrets"]["GITHUB_TOKEN"] = "bad"
+
+        def strict(url, params=None, headers=None, **k):
+            if "api.github.com" in url and "Authorization" in (headers or {}):
+                raise http.FetchError(f"GET {url} failed: HTTP Error 401: Unauthorized")
+            return fake_get(url, params, headers, **k)
+        with mock.patch.object(http, "get", side_effect=strict), mock.patch.object(http.time, "sleep"):
+            report, _ = app.run(self.cfg, use_analyst=False)
+        self.assertIn("spotify/basic-pitch", [c.repo_id for c in report.music["music_score"]])
+
     def test_telegram_sent_when_configured(self):
         self.cfg["secrets"].update(TELEGRAM_BOT_TOKEN="t", TELEGRAM_CHAT_ID="1")
         self.run_once()

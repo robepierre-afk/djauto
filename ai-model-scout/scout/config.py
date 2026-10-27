@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from pathlib import Path
 
@@ -38,4 +39,11 @@ def _load_dotenv(path: Path) -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+        value = value.strip()
+        if value[:1] in ('"', "'"):
+            value = value[1:].split(value[0], 1)[0]
+        else:
+            # "KEY=   # note" means no value; "KEY=abc  # note" means abc.
+            value = "" if value.startswith("#") else re.split(r"\s+#", value, maxsplit=1)[0]
+        if value:
+            os.environ.setdefault(key.strip(), value)

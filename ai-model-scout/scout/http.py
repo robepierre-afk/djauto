@@ -32,10 +32,18 @@ def get(url: str, params: dict | list | None = None, headers: dict | None = None
             # 4xx other than rate limiting won't get better on retry.
             if e.code < 500 and e.code != 429:
                 break
+            if e.code == 429:
+                retry_after = e.headers.get("Retry-After", "") if e.headers else ""
+                pause(min(int(retry_after), 60) if retry_after.isdigit() else 10 * (attempt + 1))
+                continue
         except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
             last_err = e
         time.sleep(2 ** attempt)
     raise FetchError(f"GET {url} failed: {last_err}")
+
+
+def pause(seconds: float) -> None:
+    time.sleep(seconds)
 
 
 def get_json(url: str, params: dict | list | None = None, headers: dict | None = None, **kw):

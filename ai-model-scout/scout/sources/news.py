@@ -121,6 +121,10 @@ def parse_youtube_feed(xml: bytes, lookback_days: int) -> list[NewsItem]:
 
 # ---- Reddit -------------------------------------------------------------------
 
+# Reddit throttles anonymous feed readers hard; a descriptive user agent and a pause help.
+REDDIT_UA = "windows:ai-model-scout:v1.0 (personal weekly digest)"
+REDDIT_PAUSE_S = 5
+
 MUSIC_SUBS = {"aimusic", "wearethemusicmakers", "edmproduction", "musictheory"}
 
 
@@ -128,9 +132,12 @@ def collect_reddit(cfg: dict, lookback_days: int) -> list[NewsItem]:
     rc = cfg.get("reddit", {})
     music_kw = [k.lower() for k in rc.get("music_keywords", [])]
     out = []
-    for sub in rc.get("subreddits", []):
+    for i, sub in enumerate(rc.get("subreddits", [])):
+        if i:
+            http.pause(REDDIT_PAUSE_S)
         try:
-            xml = http.get(f"https://www.reddit.com/r/{sub}/top/.rss", {"t": "week", "limit": 25})
+            xml = http.get(f"https://www.reddit.com/r/{sub}/top/.rss", {"t": "week", "limit": 25},
+                           headers={"User-Agent": REDDIT_UA})
         except http.FetchError as e:
             log.warning("Reddit r/%s failed: %s", sub, e)
             continue

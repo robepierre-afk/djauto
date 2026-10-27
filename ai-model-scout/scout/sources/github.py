@@ -21,15 +21,24 @@ class GitHub:
         # Repos must have been pushed within the year; stars do the ranking.
         self.pushed_after = since(max(lookback_days, 365)).date().isoformat()
 
+    def _get(self, url: str, params: dict | None = None):
+        try:
+            return http.get_json(url, params, self.headers)
+        except http.FetchError as e:
+            if "401" not in str(e) or "Authorization" not in self.headers:
+                raise
+            log.warning("GITHUB_TOKEN was rejected (check .env); continuing without it")
+            self.headers.pop("Authorization")
+            return http.get_json(url, params, self.headers)
+
     def collect_music(self, watch_repos: list[str]) -> list[ModelCandidate]:
         seen: dict[str, ModelCandidate] = {}
         min_stars = self.cfg.get("min_stars", 50)
         for q in self.cfg.get("music_queries", []):
             query = f"{q} stars:>={min_stars} pushed:>{self.pushed_after}"
             try:
-                data = http.get_json(f"{API}/search/repositories",
-                                     {"q": query, "sort": "stars", "order": "desc", "per_page": 15},
-                                     self.headers)
+                data = self._get(f"{API}/search/repositories",
+                                 {"q": query, "sort": "stars", "order": "desc", "per_page": 15})
             except http.FetchError as e:
                 log.warning("GitHub search %r failed: %s", q, e)
                 continue
@@ -40,7 +49,7 @@ class GitHub:
                 seen[full].watchlisted = True
                 continue
             try:
-                repo = http.get_json(f"{API}/repos/{full}", headers=self.headers)
+                repo = self._get(f"{API}/repos/{full}")
             except http.FetchError as e:
                 log.warning("GitHub repo %s failed: %s", full, e)
                 continue
