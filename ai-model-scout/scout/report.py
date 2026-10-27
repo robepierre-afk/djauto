@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .hardware import FIT_LABEL
 from .models import ModelCandidate, NewsItem
+from .ratings import DIMENSIONS, GROUP_TITLES, SCALE
 
 MUSIC_SECTIONS = [
     ("music_generation", "Music generation", "Songs, instrumentals, vocals, samples and loops."),
@@ -48,8 +49,9 @@ def _notes(c: ModelCandidate) -> str:
 class Report:
     def __init__(self, machine: dict, llms: list[ModelCandidate], music: list[ModelCandidate],
                  news: list[NewsItem], briefing: str | None, errors: list[str], first_run: bool,
-                 limits: dict):
+                 limits: dict, matrix: dict | None = None):
         self.machine = machine
+        self.matrix = matrix or {}
         self.today = date.today().isoformat()
         # Everything worth knowing about, best first; the Fit column says whether it runs here.
         self.llms = llms[: limits.get("max_llms", 25)]
@@ -61,6 +63,14 @@ class Report:
         self.errors = errors
         self.first_run = first_run
         self.all = llms + music
+        self._by_id = {c.repo_id: c for c in self.all}
+
+    def matrix_rows(self, group: str) -> list[tuple[str, dict, ModelCandidate | None]]:
+        """(display name, rating, candidate) for one group: paid references first, then by rank."""
+        refs = sorted((r["name"], r, None) for r in self.matrix.values()
+                      if r["group"] == group and r.get("is_reference"))
+        ranked = [c for c in self.all if c.repo_id in self.matrix and self.matrix[c.repo_id]["group"] == group]
+        return refs + [(c.repo_id, self.matrix[c.repo_id], c) for c in ranked]
 
     @property
     def new_count(self) -> int:
@@ -90,6 +100,7 @@ class Report:
                "Only models with free, downloadable weights are listed. **NEW** = first seen this week.", ""]
         if self.briefing:
             out += ["## Weekly briefing", "", self.briefing, ""]
+        out += self._md_matrix()
         out += self._md_table("Top open LLMs", self.llms,
                               blurb="Ranked best first, whatever their size. "
                                     "'Runs here?' says whether your machine can run each one.")
@@ -106,6 +117,27 @@ class Report:
         if self.errors:
             out += ["## Sources that failed this run", ""] + [f"- {e}" for e in self.errors] + [""]
         return "\n".join(out)
+
+    def _md_matrix(self) -> list[str]:
+        if not self.matrix:
+            return []
+        out = ["## Industry rating matrix", "", f"Scores per capability. {SCALE} Paid products are shown "
+               "first for comparison.", ""]
+        for group, dims in DIMENSIONS.items():
+            rows = self.matrix_rows(group)
+            if not rows:
+                continue
+            out += [f"### {GROUP_TITLES[group]}", "",
+                    "| Model | Runs here? | " + " | ".join(label for _, label, _ in dims) + " | Excels at | Falls short |",
+                    "|---|---|" + "---|" * len(dims) + "---|---|"]
+            for name, r, c in rows:
+                label = f"**{name}** (paid)" if c is None else f"[{name}]({c.url})"
+                fit = "n/a" if c is None else FIT_LABEL.get(c.fit, c.fit)
+                cells = [str(r["scores"].get(d) or "–") for d, _, _ in dims]
+                out.append(f"| {label} | {fit} | " + " | ".join(cells) +
+                           f" | {r['excels'].replace('|', '/')} | {r['falls_short'].replace('|', '/')} |")
+            out.append("")
+        return out
 
     def _md_table(self, title: str, rows: list[ModelCandidate], llm: bool = False, blurb: str = "") -> list[str]:
         out = [f"## {title}", ""]
@@ -135,6 +167,7 @@ class Report:
             body.append(f"<section class='brief'><h2>Weekly briefing</h2>{md_to_html(self.briefing)}</section>")
         body.append("<label class='filter'><input type='checkbox' id='onlyhere'> "
                     "Only show models that run on my machine</label>")
+        body.append(self._html_matrix())
         body.append(self._html_table("Top open LLMs", self.llms,
                                      "Ranked best first, whatever their size. "
                                      "'Runs here?' says whether your machine can run each one."))
@@ -155,6 +188,39 @@ class Report:
             body.append("<section><h2>Sources that failed this run</h2><ul>" +
                         "".join(f"<li>{html.escape(e)}</li>" for e in self.errors) + "</ul></section>")
         return HTML_TEMPLATE.replace("{{TITLE}}", f"AI Model Scout {self.today}").replace("{{BODY}}", "\n".join(body))
+
+    def _html_matrix(self) -> str:
+        if not self.matrix:
+            return ""
+        h = ["<section><h2>Industry rating matrix</h2>",
+             f"<p class='blurb'>Scores per capability, researched from benchmarks and reviews. {SCALE} "
+             "Paid products are shown first for comparison. Hover a column heading for what it measures.</p>"]
+        for group, dims in DIMENSIONS.items():
+            rows = self.matrix_rows(group)
+            if not rows:
+                continue
+            h.append(f"<h3>{GROUP_TITLES[group]}</h3><div class='scroll'><table class='matrix'><thead><tr>"
+                     "<th>Model</th><th>Runs here?</th>" +
+                     "".join(f"<th title='{html.escape(desc)}'>{label}</th>" for _, label, desc in dims) +
+                     "<th>Excels at</th><th>Falls short</th></tr></thead><tbody>")
+            for name, r, c in rows:
+                if c is None:
+                    head = f"<b>{html.escape(name)}</b><small>paid reference</small>"
+                    fit, fit_cls = "n/a", "check"
+                else:
+                    head = f"<a href='{html.escape(c.url)}'>{html.escape(name)}</a>"
+                    fit, fit_cls = FIT_LABEL.get(c.fit, c.fit), c.fit
+                links = " ".join(f"<a href='{html.escape(u)}'>[{i}]</a>" for i, u in enumerate(r["sources"], 1))
+                head += f"<small>confidence: {r['confidence']}{' &middot; ' + links if links else ''}</small>"
+                cells = "".join(
+                    f"<td class='score s{r['scores'].get(d, 0)}'>{r['scores'].get(d) or '&ndash;'}</td>"
+                    for d, _, _ in dims)
+                h.append(f"<tr class='{'ref' if c is None else ''}' data-fit='{c.fit if c else 'ref'}'>"
+                         f"<td>{head}</td><td><span class='fit {fit_cls}'>{fit}</span></td>{cells}"
+                         f"<td class='notes'>{html.escape(r['excels'])}</td>"
+                         f"<td class='notes'>{html.escape(r['falls_short'])}</td></tr>")
+            h.append("</tbody></table></div>")
+        return "".join(h) + "</section>"
 
     def _html_table(self, title: str, rows: list[ModelCandidate], blurb: str = "") -> str:
         h = [f"<section><h2>{title}</h2>"]
@@ -182,7 +248,7 @@ class Report:
         paths["html"].write_text(self.html(), encoding="utf-8")
         paths["json"].write_text(json.dumps({
             "date": self.today, "machine": self.machine, "briefing": self.briefing,
-            "models": [asdict(c) for c in self.all], "news": [asdict(n) for n in self.news],
+            "models": [asdict(c) for c in self.all], "ratings": self.matrix, "news": [asdict(n) for n in self.news],
             "errors": self.errors}, indent=1), encoding="utf-8")
         (out_dir / "latest.html").write_text(self.html(), encoding="utf-8")
         return paths
@@ -238,9 +304,11 @@ HTML_TEMPLATE = """<!doctype html>
 <title>{{TITLE}}</title>
 <style>
 :root{--bg:#f7f7f5;--card:#fff;--fg:#1d1d1f;--muted:#6b6b70;--line:#e3e3e0;--accent:#3b5bdb;
---good:#2b8a3e;--ok:#b7791f;--bad:#c92a2a;--newbg:#fff3bf;--newfg:#7a5c00}
+--good:#2b8a3e;--ok:#b7791f;--bad:#c92a2a;--newbg:#fff3bf;--newfg:#7a5c00;
+--s5:#b2f2bb;--s4:#d3f9d8;--s3:#fff3bf;--s2:#ffe8cc;--s1:#ffc9c9;--s0:transparent;--refbg:#f1f3f5}
 @media (prefers-color-scheme:dark){:root{--bg:#141416;--card:#1c1c1f;--fg:#ececee;--muted:#9a9aa2;
---line:#2c2c31;--accent:#8ea2ff;--good:#69db7c;--ok:#ffd43b;--bad:#ff8787;--newbg:#5c4a00;--newfg:#ffe066}}
+--line:#2c2c31;--accent:#8ea2ff;--good:#69db7c;--ok:#ffd43b;--bad:#ff8787;--newbg:#5c4a00;--newfg:#ffe066;
+--s5:#1e5a2a;--s4:#2b4a31;--s3:#4d4417;--s2:#5a3b1c;--s1:#5c2626;--refbg:#232327}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
 font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
 main{max-width:1180px;margin:0 auto;padding:24px 16px 64px}
@@ -259,6 +327,12 @@ td.notes{color:var(--muted);min-width:260px}
 margin-left:6px;font-size:11px;font-weight:700}
 ul.news{list-style:none;padding:0;margin:0}ul.news li{padding:7px 0;border-top:1px solid var(--line)}
 ul.news small{display:block}.src{display:inline-block;min-width:92px;font-size:12px;color:var(--muted)}
+table.matrix td:first-child{min-width:190px}table.matrix td.notes{min-width:220px}
+table.matrix td.score{text-align:center;font-weight:700;min-width:44px}
+.s5{background:var(--s5)}.s4{background:var(--s4)}.s3{background:var(--s3)}.s2{background:var(--s2)}
+.s1{background:var(--s1)}.s0{color:var(--muted)}tr.ref td{background:var(--refbg)}
+tr.ref td.score.s5{background:var(--s5)}tr.ref td.score.s4{background:var(--s4)}
+tr.ref td.score.s3{background:var(--s3)}tr.ref td.score.s2{background:var(--s2)}tr.ref td.score.s1{background:var(--s1)}
 .filter{display:block;margin:16px 0 0;font-weight:600;cursor:pointer}
 body.onlyhere tr[data-fit=too_big]{display:none}
 .brief li{margin:4px 0}code{background:var(--line);padding:1px 4px;border-radius:4px}

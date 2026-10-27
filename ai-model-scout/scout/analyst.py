@@ -16,7 +16,9 @@ producer who runs AI models locally on their own media machine. They only want m
 downloadable weights they can run themselves.
 
 You get this week's candidates (from Hugging Face, GitHub, YouTube, Reddit, Hacker News and arXiv), \
-each with an estimate of whether it fits their hardware. Use web search to check current, independent \
+each with an estimate of whether it fits their hardware, and any capability ratings already \
+researched (1-5 per area, compared with the paid frontier). Keep your verdicts consistent with those \
+ratings unless you find newer evidence. Use web search to check current, independent \
 evidence (LMArena, Artificial Analysis, LiveBench, vendor model cards, credible reviews) on how the \
 strongest open-weight LLMs compare with the leading paid models (Claude, ChatGPT, Gemini). Cite the \
 sources you rely on as Markdown links. Prefer facts over hype; say plainly when evidence is thin.
@@ -49,43 +51,46 @@ def _compact(c: ModelCandidate) -> dict:
     }.items() if v not in (None, "", [], False)}
 
 
-def write_briefing(cfg: dict, machine: dict, llms: list[ModelCandidate], music: list[ModelCandidate],
-                   news: list[NewsItem]) -> str | None:
-    acfg = cfg.get("analyst", {})
-    if not acfg.get("enabled", True):
+def claude_client(cfg: dict, purpose: str):
+    """Return an Anthropic client, or None (with a log line) if Claude isn't set up."""
+    if not cfg.get("analyst", {}).get("enabled", True):
         return None
     try:
         import anthropic
     except ImportError:
-        log.info("anthropic package not installed; skipping the written briefing")
+        log.info("anthropic package not installed; skipping the %s", purpose)
         return None
     if not cfg["secrets"].get("ANTHROPIC_API_KEY"):
-        log.info("ANTHROPIC_API_KEY not set; skipping the written briefing")
+        log.info("ANTHROPIC_API_KEY not set; skipping the %s", purpose)
         return None
+    return anthropic.Anthropic()
 
-    payload = {
-        "machine": machine,
-        "llm_candidates": [_compact(c) for c in llms[:40]],
-        "music_candidates": [_compact(c) for c in music[:40]],
-        "news": [{"title": n.title, "source": n.source, "channel": n.channel, "date": n.published,
-                  "url": n.url, "topic": n.topic} for n in news[:60]],
-    }
-    messages = [{"role": "user", "content": "This week's findings:\n\n" + json.dumps(payload, indent=1)}]
 
-    client = anthropic.Anthropic()
+def ask_claude(client, cfg: dict, purpose: str, system: str, messages: list[dict], *,
+               web_searches: int = 0, json_schema: dict | None = None, effort: str | None = None) -> str | None:
+    """One Claude request (resuming if a web-search turn pauses). Returns the text, or None on failure."""
+    import anthropic
+
+    acfg = cfg.get("analyst", {})
+    output_config: dict = {"effort": effort or acfg.get("effort", "medium")}
+    if json_schema:
+        output_config["format"] = {"type": "json_schema", "schema": json_schema}
+    extra = {}
+    if web_searches:
+        extra["tools"] = [{"type": "web_search_20260209", "name": "web_search", "max_uses": web_searches}]
+    messages = list(messages)
     try:
         for _ in range(5):  # resume if the server-side search loop pauses
             with client.beta.messages.stream(
                 model=acfg.get("model", "claude-opus-5-5"),
                 max_tokens=64000,
-                system=SYSTEM,
+                system=system,
                 thinking={"type": "adaptive"},
-                output_config={"effort": acfg.get("effort", "medium")},
-                tools=[{"type": "web_search_20260209", "name": "web_search",
-                        "max_uses": int(acfg.get("max_searches", 12))}],
+                output_config=output_config,
                 betas=["server-side-fallback-2026-07-01"],
                 fallbacks="default",
                 messages=messages,
+                **extra,
             ) as stream:
                 response = stream.get_final_message()
             if response.stop_reason == "pause_turn":
@@ -93,17 +98,38 @@ def write_briefing(cfg: dict, machine: dict, llms: list[ModelCandidate], music: 
                 continue
             break
     except anthropic.RateLimitError as e:
-        log.warning("Claude rate limit; skipping briefing: %s", e)
+        log.warning("Claude rate limit; skipping the %s: %s", purpose, e)
         return None
     except anthropic.APIStatusError as e:
-        log.warning("Claude API error %s; skipping briefing: %s", e.status_code, e.message)
+        log.warning("Claude API error %s; skipping the %s: %s", e.status_code, purpose, e.message)
         return None
     except anthropic.APIConnectionError as e:
-        log.warning("Could not reach the Claude API; skipping briefing: %s", e)
+        log.warning("Could not reach the Claude API; skipping the %s: %s", purpose, e)
         return None
 
     if response.stop_reason == "refusal":
-        log.warning("Briefing request was declined; skipping")
+        log.warning("The %s request was declined; skipping", purpose)
+        return None
+    if response.stop_reason == "max_tokens":
+        log.warning("The %s was cut off at the token limit; skipping", purpose)
         return None
     text = "".join(b.text for b in response.content if b.type == "text").strip()
     return text or None
+
+
+def write_briefing(cfg: dict, machine: dict, llms: list[ModelCandidate], music: list[ModelCandidate],
+                   news: list[NewsItem], ratings: dict | None = None) -> str | None:
+    client = claude_client(cfg, "written briefing")
+    if client is None:
+        return None
+    payload = {
+        "machine": machine,
+        "llm_candidates": [_compact(c) for c in llms[:40]],
+        "music_candidates": [_compact(c) for c in music[:40]],
+        "ratings": ratings or {},
+        "news": [{"title": n.title, "source": n.source, "channel": n.channel, "date": n.published,
+                  "url": n.url, "topic": n.topic} for n in news[:60]],
+    }
+    messages = [{"role": "user", "content": "This week's findings:\n\n" + json.dumps(payload, indent=1)}]
+    return ask_claude(client, cfg, "written briefing", SYSTEM, messages,
+                      web_searches=int(cfg.get("analyst", {}).get("max_searches", 12)))

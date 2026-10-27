@@ -87,6 +87,17 @@ model = "claude-opus-5-5"
 effort = "medium"
 max_searches = 12
 
+[ratings]
+# Industry rating matrix: each top model scored 1-5 per capability (coding, reasoning, vocals,
+# transcription accuracy...) next to the leading paid products, with what it excels at and where it
+# falls short. Uses Claude + web search, so it needs ANTHROPIC_API_KEY. Ratings are cached and only
+# re-researched once they're older than max_age_days, which keeps the weekly cost low.
+enabled = true
+llms = 10               # top N LLMs to rate
+music_per_group = 5     # top N per music group (generation / analysis / scores)
+max_age_days = 30
+max_searches = 25
+
 [notify]
 # Telegram summary when the report is ready. Needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env.
 telegram = true

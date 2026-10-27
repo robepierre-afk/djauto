@@ -25,6 +25,27 @@ report are marked **NEW**. When the report is ready it can also send you a Teleg
 | arXiv | New music generation, transcription and OMR research | No |
 | Claude (optional) | A written briefing that searches the web for current benchmarks (LMArena, Artificial Analysis…), compares the best open models with Claude and ChatGPT, and gives picks for your machine | `ANTHROPIC_API_KEY` |
 
+### Industry rating matrix
+
+With an `ANTHROPIC_API_KEY` set, the report opens with a rating matrix. It scores the top models
+1–5 in each capability area and puts the leading paid products in the same table for comparison:
+
+| Group | Compared with | Areas scored |
+|---|---|---|
+| Open LLMs | Claude, ChatGPT, Gemini | Coding, Reasoning & maths, Knowledge, Writing & chat, Tools & agents, Multilingual, Long context, Vision |
+| Music generation | Suno, Udio | Vocals, Instrumentals, Song structure, Lyrics adherence, Control & editing, Audio fidelity |
+| Music analysis | Leading paid analysis service | Accuracy, Robustness, Coverage, Outputs, Ease of use |
+| Transcription & scores | Leading paid transcription tool | Accuracy, Robustness, Coverage, Outputs, Ease of use |
+
+5 means it matches the best paid product in that area, 3 means solid but clearly behind, and a dash
+means it doesn't apply or there's no evidence. Each row also says what the model **excels at**,
+where it **falls short**, how confident the rating is, and links to the sources used.
+
+Claude researches the scores with web search (leaderboards, benchmark tables, reviews). Each model
+is researched about once a month (`[ratings] max_age_days`), so most weeks only new models cost
+anything. The ratings are AI-researched summaries of public evidence, not lab measurements; low
+confidence means the evidence was thin.
+
 If a model is mentioned in this week's videos or posts, its ranking goes up, and the report says
 how often it was mentioned.
 

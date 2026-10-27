@@ -10,13 +10,17 @@ from pathlib import Path
 class State:
     def __init__(self, path: Path):
         self.path = path
-        self.data = {"seen": {}, "youtube_channels": {}, "runs": []}
+        self.data = {"seen": {}, "youtube_channels": {}, "ratings": {}, "runs": []}
         if path.exists():
             self.data.update(json.loads(path.read_text(encoding="utf-8")))
 
     @property
     def channel_cache(self) -> dict:
         return self.data["youtube_channels"]
+
+    @property
+    def ratings_cache(self) -> dict:
+        return self.data.setdefault("ratings", {})
 
     @property
     def first_run(self) -> bool:
