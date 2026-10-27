@@ -59,9 +59,9 @@ def assess(c: ModelCandidate, machine: dict) -> None:
 
 
 FIT_LABEL = {
-    "gpu": "Runs on GPU",
-    "offload": "Runs (GPU+RAM)",
-    "offload_slow": "Runs slowly",
-    "too_big": "Too big",
-    "check": "Check card",
+    "gpu": "Yes, on GPU",
+    "offload": "Yes, GPU + RAM",
+    "offload_slow": "Yes, but slowly",
+    "too_big": "No, too big",
+    "check": "Probably (check card)",
 }

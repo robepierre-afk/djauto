@@ -8,10 +8,10 @@ on your own media machine. It covers two areas:
 2. **Music AI** for song and instrumental **generation**, **analysis** (stems, beats, chords, key,
    structure) and **transcription and scores** (audio to MIDI, sheet music, MusicXML).
 
-Each week it writes a report (HTML, Markdown and JSON) that ranks what it found. For every model
-the report says whether it runs on your GPU, needs system RAM as well, or is too big. Models that
-weren't in last week's report are marked **NEW**. When the report is ready it can also send you a
-Telegram message.
+Each week it writes a report (HTML, Markdown and JSON) ranking the best models it found, **whatever
+their size**. Every model gets a **"Runs here?"** flag that says whether your machine can run it. A
+checkbox at the top of the HTML report hides the ones that can't. Models that weren't in last week's
+report are marked **NEW**. When the report is ready it can also send you a Telegram message.
 
 ## Where it looks
 
@@ -88,16 +88,16 @@ the music tools you rely on get updated.
 ## How "fits your machine" is worked out
 
 For LLMs, the scout estimates the memory needed for the weights at FP16, Q8 and Q4 (GGUF Q4_K_M),
-plus about 1.5 GB for context. It then picks the best format that fits in VRAM:
+plus about 1.5 GB for context. The "Runs here?" column then says:
 
-- **Runs on GPU**: fits entirely in VRAM at the format shown.
-- **Runs (GPU+RAM)**: a mixture-of-experts model that fits in VRAM plus system RAM at Q4. MoE
+- **Yes, on GPU**: fits entirely in VRAM at the format shown in the notes.
+- **Yes, GPU + RAM**: a mixture-of-experts model that fits in VRAM plus system RAM at Q4. MoE
   models only use a few billion parameters per token, so they stay usable when partly in RAM
   (e.g. gpt-oss-120b, Qwen3-30B-A3B).
-- **Runs slowly**: a dense model that only fits by spilling into system RAM. Expect a few tokens
-  per second.
-- **Too big**: listed under "Frontier-class" so you can see what the best open models are, even if
-  they need more hardware.
+- **Yes, but slowly**: a dense model that only fits by spilling into system RAM. Expect a few
+  tokens per second.
+- **No, too big**: still listed, so you can see what the best open models are.
+- **Probably (check card)**: the size isn't published (common for GitHub tools).
 
 Music models are assumed to run unquantised (FP16) in PyTorch. These are estimates, so check the
 model card before buying hardware.

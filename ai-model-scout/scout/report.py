@@ -17,6 +17,7 @@ MUSIC_SECTIONS = [
     ("music_analysis", "Music analysis", "Stem separation, beats, chords, key, structure, tagging."),
     ("music_score", "Transcription & scores", "Audio to MIDI, sheet music, MusicXML, symbolic music."),
 ]
+RUNS_HERE = ("gpu", "offload", "offload_slow")
 SOURCE_LABEL = {"youtube": "YouTube", "reddit": "Reddit", "hackernews": "Hacker News", "arxiv": "arXiv"}
 
 
@@ -50,9 +51,9 @@ class Report:
                  limits: dict):
         self.machine = machine
         self.today = date.today().isoformat()
-        self.runnable = [c for c in llms if c.fit in ("gpu", "offload")][: limits.get("max_llms", 25)]
-        self.frontier = [c for c in llms if c.fit in ("offload_slow", "too_big")
-                         and (c.params_b or 0) >= 100][:10]
+        # Everything worth knowing about, best first; the Fit column says whether it runs here.
+        self.llms = llms[: limits.get("max_llms", 25)]
+        self.runnable = [c for c in llms if c.fit in RUNS_HERE]
         self.music = {k: [c for c in music if c.category == k][: limits.get("max_music", 30) // 3 + 4]
                       for k, _, _ in MUSIC_SECTIONS}
         self.news = news[: limits.get("max_news", 40)]
@@ -68,11 +69,14 @@ class Report:
     def headline(self) -> list[str]:
         """Short lines for the Telegram notification."""
         lines = []
-        new = [c for c in self.runnable + [m for v in self.music.values() for m in v] if c.is_new]
+        new = [c for c in self.llms + [m for v in self.music.values() for m in v] if c.is_new]
         if new and not self.first_run:
             lines.append("New this week: " + ", ".join(c.repo_id for c in new[:6]))
+        if self.llms:
+            lines.append("Top open LLMs: " + ", ".join(
+                c.name + ("" if c.fit in RUNS_HERE else " (too big here)") for c in self.llms[:3]))
         if self.runnable:
-            lines.append("Top LLMs for your machine: " + ", ".join(c.name for c in self.runnable[:3]))
+            lines.append("Best that run on your machine: " + ", ".join(c.name for c in self.runnable[:3]))
         for key, title, _ in MUSIC_SECTIONS:
             if self.music[key]:
                 lines.append(f"{title}: " + ", ".join(c.name for c in self.music[key][:3]))
@@ -86,8 +90,9 @@ class Report:
                "Only models with free, downloadable weights are listed. **NEW** = first seen this week.", ""]
         if self.briefing:
             out += ["## Weekly briefing", "", self.briefing, ""]
-        out += self._md_table("Open LLMs that run on your machine", self.runnable, llm=True)
-        out += self._md_table("Frontier-class open LLMs (need bigger hardware)", self.frontier, llm=True)
+        out += self._md_table("Top open LLMs", self.llms,
+                              blurb="Ranked best first, whatever their size. "
+                                    "'Runs here?' says whether your machine can run each one.")
         for key, title, blurb in MUSIC_SECTIONS:
             out += self._md_table(title, self.music[key], blurb=blurb)
         out += ["## This week's videos and discussions", ""]
@@ -108,7 +113,7 @@ class Report:
             out += [blurb, ""]
         if not rows:
             return out + ["_Nothing found this week._", ""]
-        out += ["| Model | Size | Fit | Licence | Popularity | Notes |", "|---|---|---|---|---|---|"]
+        out += ["| Model | Size | Runs here? | Licence | Popularity | Notes |", "|---|---|---|---|---|---|"]
         for c in rows:
             name = f"[{c.repo_id}]({c.url})" + (" **NEW**" if c.is_new and not self.first_run else "")
             notes = _notes(c).replace("|", "/")
@@ -121,15 +126,18 @@ class Report:
         body = [f"<header><h1>AI Model Scout</h1><p class='sub'>{self.today} &middot; "
                 f"{html.escape(str(m.get('name', '')))}: {m.get('gpu_vram_gb')} GB VRAM, {m.get('system_ram_gb')} GB RAM"
                 f" &middot; open, downloadable weights only</p></header>"]
-        stats = [("LLMs that fit", len(self.runnable)),
+        stats = [("Top LLMs that run here", f"{sum(c.fit in RUNS_HERE for c in self.llms)} of {len(self.llms)}"),
                  ("Music models", sum(len(v) for v in self.music.values())),
                  ("New this week", self.new_count), ("Videos & posts", len(self.news))]
         body.append("<div class='stats'>" + "".join(
             f"<div class='stat'><b>{v}</b><span>{k}</span></div>" for k, v in stats) + "</div>")
         if self.briefing:
             body.append(f"<section class='brief'><h2>Weekly briefing</h2>{md_to_html(self.briefing)}</section>")
-        body.append(self._html_table("Open LLMs that run on your machine", self.runnable))
-        body.append(self._html_table("Frontier-class open LLMs (need bigger hardware)", self.frontier))
+        body.append("<label class='filter'><input type='checkbox' id='onlyhere'> "
+                    "Only show models that run on my machine</label>")
+        body.append(self._html_table("Top open LLMs", self.llms,
+                                     "Ranked best first, whatever their size. "
+                                     "'Runs here?' says whether your machine can run each one."))
         for key, title, blurb in MUSIC_SECTIONS:
             body.append(self._html_table(title, self.music[key], blurb))
         body.append("<section><h2>This week's videos and discussions</h2>")
@@ -154,11 +162,11 @@ class Report:
             h.append(f"<p class='blurb'>{blurb}</p>")
         if not rows:
             return "".join(h) + "<p class='empty'>Nothing found this week.</p></section>"
-        h.append("<div class='scroll'><table><thead><tr><th>Model</th><th>Size</th><th>Fit</th>"
+        h.append("<div class='scroll'><table><thead><tr><th>Model</th><th>Size</th><th>Runs here?</th>"
                  "<th>Licence</th><th>Popularity</th><th>Notes</th></tr></thead><tbody>")
         for c in rows:
             badge = "<span class='new'>NEW</span>" if c.is_new and not self.first_run else ""
-            h.append(f"<tr><td><a href='{html.escape(c.url)}'>{html.escape(c.repo_id)}</a>{badge}"
+            h.append(f"<tr data-fit='{c.fit}'><td><a href='{html.escape(c.url)}'>{html.escape(c.repo_id)}</a>{badge}"
                      f"<small>{c.updated or c.created}</small></td><td>{_size(c)}</td>"
                      f"<td><span class='fit {c.fit}'>{FIT_LABEL.get(c.fit, c.fit)}</span></td>"
                      f"<td>{html.escape(c.license)}</td><td>{_pop(c)}</td>"
@@ -251,8 +259,23 @@ td.notes{color:var(--muted);min-width:260px}
 margin-left:6px;font-size:11px;font-weight:700}
 ul.news{list-style:none;padding:0;margin:0}ul.news li{padding:7px 0;border-top:1px solid var(--line)}
 ul.news small{display:block}.src{display:inline-block;min-width:92px;font-size:12px;color:var(--muted)}
+.filter{display:block;margin:16px 0 0;font-weight:600;cursor:pointer}
+body.onlyhere tr[data-fit=too_big]{display:none}
 .brief li{margin:4px 0}code{background:var(--line);padding:1px 4px;border-radius:4px}
 </style></head><body><main>
 {{BODY}}
-</main></body></html>
+</main>
+<script>
+const box = document.getElementById("onlyhere");
+if (box) {
+  try { box.checked = localStorage.getItem("onlyhere") === "1"; } catch (e) {}
+  const apply = () => document.body.classList.toggle("onlyhere", box.checked);
+  box.addEventListener("change", () => {
+    apply();
+    try { localStorage.setItem("onlyhere", box.checked ? "1" : "0"); } catch (e) {}
+  });
+  apply();
+}
+</script>
+</body></html>
 """

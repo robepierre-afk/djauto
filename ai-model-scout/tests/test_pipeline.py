@@ -137,17 +137,18 @@ class Pipeline(unittest.TestCase):
 
     def test_full_run(self):
         report, paths = self.run_once()
-        runnable = [c.repo_id for c in report.runnable]
-        self.assertIn("Qwen/Qwen4-32B", runnable)
-        self.assertIn("openai/gpt-oss-120b", runnable)          # MoE (from config) -> usable with offload
-        self.assertNotIn("Qwen/Qwen4-235B-A22B", runnable)     # ~150 GB at Q4: too big for 24+64 GB
-        self.assertNotIn("someone/old-model-7B", runnable)      # too old
-        self.assertNotIn("unsloth/Qwen4-32B-GGUF", runnable)    # quant folded into base
-        qwen = next(c for c in report.runnable if c.repo_id == "Qwen/Qwen4-32B")
+        fits = {c.repo_id: c.fit for c in report.llms}
+        self.assertEqual(fits["Qwen/Qwen4-32B"], "gpu")
+        self.assertEqual(fits["openai/gpt-oss-120b"], "offload")    # MoE (from config) -> usable with offload
+        self.assertEqual(fits["Qwen/Qwen4-235B-A22B"], "too_big")   # listed anyway, flagged as too big
+        self.assertEqual(fits["deepseek-ai/DeepSeek-V4"], "too_big")
+        self.assertNotIn("someone/old-model-7B", fits)              # too old
+        self.assertNotIn("unsloth/Qwen4-32B-GGUF", fits)            # quant folded into base
+        self.assertNotIn("Qwen/Qwen4-235B-A22B", [c.repo_id for c in report.runnable])
+        qwen = next(c for c in report.llms if c.repo_id == "Qwen/Qwen4-32B")
         self.assertTrue(qwen.has_gguf)
-        self.assertIn("DeepSeek-V4", " ".join(c.repo_id for c in report.frontier))
-        ds = next(c for c in report.frontier if c.repo_id.endswith("DeepSeek-V4"))
-        self.assertTrue(ds.mentions)                            # linked to the Reddit post
+        ds = next(c for c in report.llms if c.repo_id.endswith("DeepSeek-V4"))
+        self.assertTrue(ds.mentions)                                # linked to the Reddit post
 
         music_ids = {c.repo_id for v in report.music.values() for c in v}
         self.assertIn("ACE-Step/ACE-Step-v1-3.5B", music_ids)
@@ -169,6 +170,9 @@ class Pipeline(unittest.TestCase):
             self.assertTrue(paths[key].exists())
         html = paths["html"].read_text()
         self.assertIn("Qwen/Qwen4-32B", html)
+        self.assertIn("<tr data-fit='too_big'>", html)
+        self.assertIn("No, too big", html)
+        self.assertIn("id='onlyhere'", html)
         self.assertNotIn("<span class='new'>", html)            # first run: nothing flagged NEW
         self.assertEqual(report.errors, [])
         self.assertTrue((Path(self.tmp.name) / "state.json").exists())
@@ -193,7 +197,7 @@ class Pipeline(unittest.TestCase):
         with mock.patch.object(http, "get", side_effect=flaky), mock.patch.object(http.time, "sleep"):
             report, _ = app.run(self.cfg, use_analyst=False)
         self.assertTrue(any(e.startswith("Reddit") for e in report.errors))
-        self.assertTrue(report.runnable)
+        self.assertTrue(report.llms)
 
     def test_rejected_github_token_falls_back_to_anonymous(self):
         self.cfg["secrets"]["GITHUB_TOKEN"] = "bad"
@@ -221,7 +225,10 @@ class Pipeline(unittest.TestCase):
         self.cfg["secrets"].update(TELEGRAM_BOT_TOKEN="t", TELEGRAM_CHAT_ID="1")
         self.run_once()
         self.assertEqual(len(self.sent), 1)
-        self.assertIn("Top LLMs for your machine", self.sent[0][1]["text"])
+        text = self.sent[0][1]["text"]
+        self.assertIn("Top open LLMs:", text)
+        self.assertIn("(too big here)", text)
+        self.assertIn("Best that run on your machine:", text)
 
 
 if __name__ == "__main__":

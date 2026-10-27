@@ -77,7 +77,7 @@ def run(cfg: dict, use_analyst: bool = True) -> tuple[Report, dict]:
         llms = [c for c in llms if "non-commercial" not in c.license_note]
 
     # Only spend GGUF lookups on the LLMs that will actually be shown.
-    hf.check_gguf([c for c in llms if c.fit in ("gpu", "offload")][: rcfg.get("max_llms", 25)])
+    hf.check_gguf(llms[: rcfg.get("max_llms", 25)])
 
     first_run = state.first_run
     new_ids = state.mark([c.repo_id for c in llms + music])
