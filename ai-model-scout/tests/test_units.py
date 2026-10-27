@@ -3,7 +3,7 @@ import unittest
 from scout import hardware
 from scout.models import ModelCandidate
 from scout.report import md_to_html
-from scout.textutil import family_key, is_non_commercial, music_category, parse_params_from_name
+from scout.textutil import family_key, is_music, is_non_commercial, music_category, parse_params_from_name
 
 MACHINE = {"gpu_vram_gb": 24, "system_ram_gb": 64}
 
@@ -28,9 +28,22 @@ class TextUtil(unittest.TestCase):
         self.assertEqual(family_key("DeepSeek-V3.2"), "deepseek-v3.2")
 
     def test_music_category(self):
-        self.assertEqual(music_category("spotify/basic-pitch audio to midi transcription"), "music_score")
-        self.assertEqual(music_category("facebookresearch/demucs source separation"), "music_analysis")
-        self.assertEqual(music_category("ACE-Step text-to-music song generation"), "music_generation")
+        self.assertEqual(music_category("audio-to-midi transcription", "spotify/basic-pitch"), "music_score")
+        self.assertEqual(music_category("music source separation", "facebookresearch/demucs"), "music_analysis")
+        self.assertEqual(music_category("text-to-music song generation", "ACE-Step-v1-3.5B"), "music_generation")
+        self.assertEqual(music_category("music transcription lyrics", "acestep-transcriber"), "music_score")
+        # Song generators that mention lyrics transcription in their tags are still generators.
+        self.assertEqual(music_category("music song generation lyrics transcription text-to-audio", "YuE2-3B",
+                                        "text-to-audio"), "music_generation")
+        self.assertEqual(music_category("music feature-extraction", "MERT-v1-330M"), "music_analysis")
+
+    def test_is_music(self):
+        self.assertFalse(is_music("indic-parler-tts text-to-speech multilingual", "indic-parler-tts"))
+        self.assertFalse(is_music("OmniVoice text-to-speech voice cloning singing", "OmniVoice"))
+        self.assertFalse(is_music("music audio tokenizer", "yue2-realaudio-tokenizer-v4"))
+        self.assertFalse(is_music("system prompt stemming", "system-model"))  # no substring matches
+        self.assertTrue(is_music("singing voice synthesis tts", "Singing-Voice-Synth"))
+        self.assertTrue(is_music("text-to-audio stable-audio music", "stable-audio-open-1.0"))
 
     def test_non_commercial(self):
         self.assertTrue(is_non_commercial("cc-by-nc-4.0"))

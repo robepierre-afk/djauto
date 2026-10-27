@@ -74,7 +74,7 @@ class HuggingFace:
                 rows.setdefault(r["id"], r)
         for tag in self.cfg.get("music_pipeline_tags", []):
             for r in self._query(pipeline_tag=tag, sort="trendingScore", direction=-1, limit=50):
-                if is_music(r["id"] + " " + " ".join(r.get("tags", []))):
+                if is_music(r["id"] + " " + " ".join(r.get("tags", [])), r["id"]):
                     rows.setdefault(r["id"], r)
         for rid in watch_ids:
             if "/" in rid and rid not in rows:
@@ -91,9 +91,9 @@ class HuggingFace:
             if not watched and days_ago(r.get("lastModified", "")) > max_age:
                 continue
             text = " ".join([rid, r.get("pipeline_tag") or "", *r.get("tags", [])])
-            if not is_music(text):
+            if not watched and not is_music(text, rid.split("/")[-1]):
                 continue
-            c = self._to_candidate(r, music_category(text))
+            c = self._to_candidate(r, music_category(text, rid.split("/")[-1], r.get("pipeline_tag") or ""))
             c.watchlisted = watched
             out.append(c)
         return out

@@ -8,7 +8,7 @@ import sys
 import webbrowser
 from pathlib import Path
 
-from . import analyst, hardware, notify, scoring
+from . import analyst, hardware, http, notify, scoring
 from .config import APP_DIR, load_config
 from .models import ModelCandidate, NewsItem
 from .report import Report
@@ -34,6 +34,10 @@ def run(cfg: dict, use_analyst: bool = True) -> tuple[Report, dict]:
         log.info("Collecting: %s", label)
         try:
             result = fn()
+        except http.FetchError as e:
+            log.warning("%s failed: %s", label, e)
+            errors.append(f"{label}: {e}")
+            return default
         except Exception as e:  # one broken source must not sink the weekly report
             log.exception("%s failed", label)
             errors.append(f"{label}: {e}")

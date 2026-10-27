@@ -33,6 +33,7 @@ class GitHub:
 
     def collect_music(self, watch_repos: list[str]) -> list[ModelCandidate]:
         seen: dict[str, ModelCandidate] = {}
+        failures: list[str] = []
         min_stars = self.cfg.get("min_stars", 50)
         for q in self.cfg.get("music_queries", []):
             query = f"{q} stars:>={min_stars} pushed:>{self.pushed_after}"
@@ -41,6 +42,7 @@ class GitHub:
                                  {"q": query, "sort": "stars", "order": "desc", "per_page": 15})
             except http.FetchError as e:
                 log.warning("GitHub search %r failed: %s", q, e)
+                failures.append(str(e))
                 continue
             for repo in data.get("items", []):
                 seen.setdefault(repo["full_name"], self._to_candidate(repo))
@@ -52,10 +54,14 @@ class GitHub:
                 repo = self._get(f"{API}/repos/{full}")
             except http.FetchError as e:
                 log.warning("GitHub repo %s failed: %s", full, e)
+                failures.append(str(e))
                 continue
             c = self._to_candidate(repo)
             c.watchlisted = True
             seen[full] = c
+        if not seen and failures:
+            # Report the actual cause (rate limit, firewall, bad token) instead of "returned nothing".
+            raise http.FetchError(f"all {len(failures)} requests failed, e.g. {failures[-1].split(' failed: ')[-1]}")
         return list(seen.values())
 
     @staticmethod
@@ -65,7 +71,7 @@ class GitHub:
         lic = (repo.get("license") or {}).get("spdx_id") or "unknown"
         return ModelCandidate(
             repo_id=repo["full_name"],
-            category=music_category(" ".join([repo["full_name"], desc, *topics])),
+            category=music_category(" ".join([desc, *topics]), repo["full_name"]),
             source="github", url=repo["html_url"], license=lic.lower() if lic != "NOASSERTION" else "unknown",
             stars=int(repo.get("stargazers_count") or 0), created=iso_date(repo.get("created_at")),
             updated=iso_date(repo.get("pushed_at")), description=desc, tags=topics,

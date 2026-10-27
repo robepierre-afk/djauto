@@ -206,6 +206,17 @@ class Pipeline(unittest.TestCase):
             report, _ = app.run(self.cfg, use_analyst=False)
         self.assertIn("spotify/basic-pitch", [c.repo_id for c in report.music["music_score"]])
 
+    def test_github_failure_reason_is_reported(self):
+        def no_github(url, *a, **k):
+            if "api.github.com" in url:
+                raise http.FetchError(f"GET {url} failed: HTTP Error 403: rate limit exceeded")
+            return fake_get(url, *a, **k)
+        with mock.patch.object(http, "get", side_effect=no_github), mock.patch.object(http.time, "sleep"):
+            report, _ = app.run(self.cfg, use_analyst=False)
+        gh = [e for e in report.errors if e.startswith("GitHub music")]
+        self.assertEqual(len(gh), 1)
+        self.assertIn("403: rate limit exceeded", gh[0])
+
     def test_telegram_sent_when_configured(self):
         self.cfg["secrets"].update(TELEGRAM_BOT_TOKEN="t", TELEGRAM_CHAT_ID="1")
         self.run_once()
