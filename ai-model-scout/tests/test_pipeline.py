@@ -123,6 +123,8 @@ class Pipeline(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.cfg = load_config()
         self.cfg["report"]["output_dir"] = self.tmp.name
+        # Fixed test machine, independent of whatever the example config ships with.
+        self.cfg["machine"] = {"name": "Test rig", "gpu_vram_gb": 24, "system_ram_gb": 64}
         self.cfg["secrets"] = {k: "" for k in self.cfg["secrets"]}
         self.sent = []
 

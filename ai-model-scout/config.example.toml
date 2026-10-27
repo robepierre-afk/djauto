@@ -3,9 +3,9 @@
 
 [machine]
 # Your media machine. Used to tell you which models will actually run on it.
-name = "Media machine"
-gpu_vram_gb = 24        # e.g. RTX 4090 = 24, RTX 5090 = 32, 2x 3090 = 48, Mac M-series = unified memory
-system_ram_gb = 64      # used for CPU/GPU offload (llama.cpp, Ollama, LM Studio)
+name = "Legion Pro 5 (RTX 5060 8 GB, 32 GB RAM)"
+gpu_vram_gb = 8         # RTX 5060 laptop GPU. e.g. RTX 4090 = 24, RTX 5090 = 32
+system_ram_gb = 32      # used for CPU/GPU offload (llama.cpp, Ollama, LM Studio)
 unified_memory = false  # true for Apple Silicon: VRAM and RAM are the same pool
 
 [report]
