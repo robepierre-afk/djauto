@@ -8,7 +8,7 @@ import sys
 import webbrowser
 from pathlib import Path
 
-from . import analyst, hardware, http, notify, ratings, scoring
+from . import analyst, hardware, http, notify, profile, ratings, scoring
 from .config import APP_DIR, load_config
 from .models import ModelCandidate, NewsItem
 from .report import Report
@@ -84,15 +84,20 @@ def run(cfg: dict, use_analyst: bool = True) -> tuple[Report, dict]:
     for c in llms + music:
         c.is_new = c.repo_id in new_ids
 
-    briefing, matrix = None, {}
+    matrix = {}
     if use_analyst:
         log.info("Rating models against the paid frontier (cached for %s days)",
                  cfg.get("ratings", {}).get("max_age_days", 30))
         matrix = ratings.rate(cfg, state.ratings_cache, llms, music)
-        log.info("Writing briefing with Claude")
-        briefing = analyst.write_briefing(cfg, machine, llms, music, news, matrix)
 
-    report = Report(machine, llms, music, news, briefing, errors, first_run, rcfg, matrix)
+    report = Report(machine, llms, music, news, None, errors, first_run, rcfg, matrix)
+    log.info("Reading model cards for the profile pages")
+    hf.fetch_summaries(report.shown)
+    profile.assign(llms + music, matrix)
+
+    if use_analyst:
+        log.info("Writing briefing with Claude")
+        report.briefing = analyst.write_briefing(cfg, machine, llms, music, news, matrix)
     paths = report.write(out_dir)
     state.save(str(paths["html"]))
 

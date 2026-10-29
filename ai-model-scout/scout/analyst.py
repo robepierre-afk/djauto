@@ -46,7 +46,7 @@ def _compact(c: ModelCandidate) -> dict:
         "repo": c.repo_id, "category": c.category, "url": c.url, "license": c.license,
         "params_b": c.params_b, "active_b": c.active_params_b, "likes": c.likes, "stars": c.stars,
         "created": c.created, "updated": c.updated, "gguf": c.has_gguf, "fit": FIT_LABEL.get(c.fit, c.fit),
-        "fit_detail": c.fit_detail, "new_this_week": c.is_new, "mentions": c.mentions[:3],
+        "fit_detail": c.fit_detail, "good_for": c.good_for, "summary": c.summary[:200], "new_this_week": c.is_new, "mentions": c.mentions[:3],
         "desc": c.description[:160],
     }.items() if v not in (None, "", [], False)}
 

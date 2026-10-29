@@ -11,6 +11,8 @@ from pathlib import Path
 
 from .hardware import FIT_LABEL
 from .models import ModelCandidate, NewsItem
+from . import profile
+from .page import HTML_TEMPLATE
 from .ratings import DIMENSIONS, GROUP_TITLES, SCALE
 
 MUSIC_SECTIONS = [
@@ -64,6 +66,15 @@ class Report:
         self.first_run = first_run
         self.all = llms + music
         self._by_id = {c.repo_id: c for c in self.all}
+
+    @property
+    def shown(self) -> list[ModelCandidate]:
+        """Every model that appears in a table; each gets a profile page."""
+        return self.llms + [c for rows in self.music.values() for c in rows]
+
+    def _good_for(self, c: ModelCandidate) -> str:
+        rating = profile.overall(self.matrix.get(c.repo_id))
+        return " · ".join(c.good_for) + (f" (rated {rating}/5)" if rating else "")
 
     def matrix_rows(self, group: str) -> list[tuple[str, dict, ModelCandidate | None]]:
         """(display name, rating, candidate) for one group: paid references first, then by rank."""
@@ -145,11 +156,13 @@ class Report:
             out += [blurb, ""]
         if not rows:
             return out + ["_Nothing found this week._", ""]
-        out += ["| Model | Size | Runs here? | Licence | Popularity | Notes |", "|---|---|---|---|---|---|"]
+        out += ["| Model | Good for | Size | Runs here? | Licence | Popularity | Notes |",
+                "|---|---|---|---|---|---|---|"]
         for c in rows:
-            name = f"[{c.repo_id}]({c.url})" + (" **NEW**" if c.is_new and not self.first_run else "")
+            name = (f"[{c.repo_id}]({profile.page_path(c)})" + (" **NEW**" if c.is_new and not self.first_run else ""))
             notes = _notes(c).replace("|", "/")
-            out.append(f"| {name} | {_size(c)} | {FIT_LABEL.get(c.fit, c.fit)} | {c.license} | {_pop(c)} | {notes} |")
+            out.append(f"| {name} | {self._good_for(c)} | {_size(c)} | {FIT_LABEL.get(c.fit, c.fit)} | {c.license} "
+                       f"| {_pop(c)} | {notes} |")
         return out + [""]
 
     # ---- HTML -------------------------------------------------------------------
@@ -208,7 +221,7 @@ class Report:
                     head = f"<b>{html.escape(name)}</b><small>paid reference</small>"
                     fit, fit_cls = "n/a", "check"
                 else:
-                    head = f"<a href='{html.escape(c.url)}'>{html.escape(name)}</a>"
+                    head = f"<a href='{profile.page_path(c)}'>{html.escape(name)}</a>"
                     fit, fit_cls = FIT_LABEL.get(c.fit, c.fit), c.fit
                 links = " ".join(f"<a href='{html.escape(u)}'>[{i}]</a>" for i, u in enumerate(r["sources"], 1))
                 head += f"<small>confidence: {r['confidence']}{' &middot; ' + links if links else ''}</small>"
@@ -228,12 +241,16 @@ class Report:
             h.append(f"<p class='blurb'>{blurb}</p>")
         if not rows:
             return "".join(h) + "<p class='empty'>Nothing found this week.</p></section>"
-        h.append("<div class='scroll'><table><thead><tr><th>Model</th><th>Size</th><th>Runs here?</th>"
+        h.append("<div class='scroll'><table><thead><tr><th>Model</th><th>Good for</th><th>Size</th><th>Runs here?</th>"
                  "<th>Licence</th><th>Popularity</th><th>Notes</th></tr></thead><tbody>")
         for c in rows:
             badge = "<span class='new'>NEW</span>" if c.is_new and not self.first_run else ""
-            h.append(f"<tr data-fit='{c.fit}'><td><a href='{html.escape(c.url)}'>{html.escape(c.repo_id)}</a>{badge}"
-                     f"<small>{c.updated or c.created}</small></td><td>{_size(c)}</td>"
+            rating = profile.overall(self.matrix.get(c.repo_id))
+            h.append(f"<tr data-fit='{c.fit}'><td><a href='{profile.page_path(c)}'>{html.escape(c.repo_id)}</a>{badge}"
+                     f"<small>{c.updated or c.created} &middot; <a class='profile-link' "
+                     f"href='{profile.page_path(c)}'>profile &amp; ratings &rarr;</a></small></td>"
+                     f"<td class='goodfor'>{html.escape(' · '.join(c.good_for))}"
+                     f"{f'<small>rated {rating}/5 vs paid</small>' if rating else ''}</td><td>{_size(c)}</td>"
                      f"<td><span class='fit {c.fit}'>{FIT_LABEL.get(c.fit, c.fit)}</span></td>"
                      f"<td>{html.escape(c.license)}</td><td>{_pop(c)}</td>"
                      f"<td class='notes'>{html.escape(_notes(c))}</td></tr>")
@@ -251,6 +268,12 @@ class Report:
             "models": [asdict(c) for c in self.all], "ratings": self.matrix, "news": [asdict(n) for n in self.news],
             "errors": self.errors}, indent=1), encoding="utf-8")
         (out_dir / "latest.html").write_text(self.html(), encoding="utf-8")
+        (out_dir / "models").mkdir(exist_ok=True)
+        refs = [r for r in self.matrix.values() if r.get("is_reference")]
+        for c in self.shown:
+            page = profile.render(c, self.matrix.get(c.repo_id), [r for r in refs if r["group"] == c.category],
+                                  self.today)
+            (out_dir / profile.page_path(c)).write_text(page, encoding="utf-8")
         return paths
 
 
@@ -296,60 +319,3 @@ def md_to_html(md: str) -> str:
             para.append(s)
     flush()
     return "\n".join(out)
-
-
-HTML_TEMPLATE = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{TITLE}}</title>
-<style>
-:root{--bg:#f7f7f5;--card:#fff;--fg:#1d1d1f;--muted:#6b6b70;--line:#e3e3e0;--accent:#3b5bdb;
---good:#2b8a3e;--ok:#b7791f;--bad:#c92a2a;--newbg:#fff3bf;--newfg:#7a5c00;
---s5:#b2f2bb;--s4:#d3f9d8;--s3:#fff3bf;--s2:#ffe8cc;--s1:#ffc9c9;--s0:transparent;--refbg:#f1f3f5}
-@media (prefers-color-scheme:dark){:root{--bg:#141416;--card:#1c1c1f;--fg:#ececee;--muted:#9a9aa2;
---line:#2c2c31;--accent:#8ea2ff;--good:#69db7c;--ok:#ffd43b;--bad:#ff8787;--newbg:#5c4a00;--newfg:#ffe066;
---s5:#1e5a2a;--s4:#2b4a31;--s3:#4d4417;--s2:#5a3b1c;--s1:#5c2626;--refbg:#232327}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
-font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-main{max-width:1180px;margin:0 auto;padding:24px 16px 64px}
-h1{margin:0;font-size:28px}h2{font-size:20px;margin:0 0 8px}h3{font-size:16px;margin:18px 0 6px}
-.sub,.blurb,small,.empty{color:var(--muted)}a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
-section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin:16px 0}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0}
-.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
-.stat b{display:block;font-size:26px}.stat span{color:var(--muted);font-size:13px}
-.scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px}
-th,td{text-align:left;padding:8px;border-top:1px solid var(--line);vertical-align:top}
-th{color:var(--muted);font-weight:600;border-top:0}td small{display:block}
-td.notes{color:var(--muted);min-width:260px}
-.fit{white-space:nowrap;font-weight:600}.fit.gpu{color:var(--good)}.fit.offload,.fit.offload_slow,.fit.check{color:var(--ok)}
-.fit.too_big{color:var(--bad)}.new{background:var(--newbg);color:var(--newfg);border-radius:6px;padding:1px 6px;
-margin-left:6px;font-size:11px;font-weight:700}
-ul.news{list-style:none;padding:0;margin:0}ul.news li{padding:7px 0;border-top:1px solid var(--line)}
-ul.news small{display:block}.src{display:inline-block;min-width:92px;font-size:12px;color:var(--muted)}
-table.matrix td:first-child{min-width:190px}table.matrix td.notes{min-width:220px}
-table.matrix td.score{text-align:center;font-weight:700;min-width:44px}
-.s5{background:var(--s5)}.s4{background:var(--s4)}.s3{background:var(--s3)}.s2{background:var(--s2)}
-.s1{background:var(--s1)}.s0{color:var(--muted)}tr.ref td{background:var(--refbg)}
-tr.ref td.score.s5{background:var(--s5)}tr.ref td.score.s4{background:var(--s4)}
-tr.ref td.score.s3{background:var(--s3)}tr.ref td.score.s2{background:var(--s2)}tr.ref td.score.s1{background:var(--s1)}
-.filter{display:block;margin:16px 0 0;font-weight:600;cursor:pointer}
-body.onlyhere tr[data-fit=too_big]{display:none}
-.brief li{margin:4px 0}code{background:var(--line);padding:1px 4px;border-radius:4px}
-</style></head><body><main>
-{{BODY}}
-</main>
-<script>
-const box = document.getElementById("onlyhere");
-if (box) {
-  try { box.checked = localStorage.getItem("onlyhere") === "1"; } catch (e) {}
-  const apply = () => document.body.classList.toggle("onlyhere", box.checked);
-  box.addEventListener("change", () => {
-    apply();
-    try { localStorage.setItem("onlyhere", box.checked ? "1" : "0"); } catch (e) {}
-  });
-  apply();
-}
-</script>
-</body></html>
-"""

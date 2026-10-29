@@ -29,7 +29,10 @@ def hf_row(rid, pipeline="text-generation", likes=100, trending=10, created=3, p
 
 
 HF_LLM = [
-    hf_row("Qwen/Qwen4-32B", likes=900, trending=400, params=32.8),
+    {**hf_row("Qwen/Qwen4-32B", likes=900, trending=400, params=32.8),
+     "cardData": {"license": "apache-2.0", "model-index": [{"results": [
+         {"dataset": {"name": "LiveCodeBench"}, "metrics": [{"name": "pass@1", "value": 61.3}]},
+         {"dataset": {"name": "AIME 2026"}, "metrics": [{"name": "accuracy", "value": "n/a"}]}]}]}},
     hf_row("Qwen/Qwen4-235B-A22B", likes=1500, trending=600, params=235),
     hf_row("deepseek-ai/DeepSeek-V4", likes=3000, trending=900, params=685),
     hf_row("openai/gpt-oss-120b", likes=4000, trending=200, created=200, params=120.4, model_type="gpt_oss"),
@@ -93,6 +96,10 @@ def fake_get(url, params=None, headers=None, **kw):
         for k, v in params:
             p.setdefault(k, str(v))
     if u.netloc == "huggingface.co":
+        if u.path.endswith("/README.md"):
+            name = u.path.split("/")[2]
+            return (f"---\nlicense: apache-2.0\n---\n# {name}\n\n{name} is an open model for coding and "
+                    f"agentic tool calling, with long context support and strong maths results.\n").encode()
         if "filter" in p:
             return json.dumps([]).encode()
         if p.get("pipeline_tag") in ("text-generation", "image-text-to-text") or "author" in p and "search" not in p:
@@ -175,6 +182,23 @@ class Pipeline(unittest.TestCase):
         self.assertIn("<tr data-fit='too_big'>", html)
         self.assertIn("No, too big", html)
         self.assertIn("id='onlyhere'", html)
+        self.assertIn("<th>Good for</th>", html)
+        self.assertIn("href='models/Qwen__Qwen4-32B.html'", html)
+
+        # Profile pages for every model shown
+        qpage = Path(self.tmp.name) / "models" / "Qwen__Qwen4-32B.html"
+        self.assertTrue(qpage.exists())
+        page = qpage.read_text()
+        self.assertIn("Qwen4-32B is an open model for coding", page)          # from the model card
+        self.assertIn("LiveCodeBench", page)                                    # self-reported benchmark
+        self.assertNotIn("AIME 2026", page)                                     # non-numeric value dropped
+        self.assertIn("Not rated yet", page)                                    # no API key in tests
+        self.assertIn("youtube.com/results?search_query=Qwen4+32B+review", page)
+        self.assertIn("../latest.html", page)
+        self.assertIn("Coding", qwen.good_for)
+        ace = Path(self.tmp.name) / "models" / "ACE-Step__ACE-Step-v1-3.5B.html"
+        self.assertTrue(ace.exists())
+        self.assertTrue((Path(self.tmp.name) / "models" / "spotify__basic-pitch.html").exists())
         self.assertNotIn("<span class='new'>", html)            # first run: nothing flagged NEW
         self.assertEqual(report.errors, [])
         self.assertTrue((Path(self.tmp.name) / "state.json").exists())

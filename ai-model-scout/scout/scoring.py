@@ -20,6 +20,7 @@ def attach_mentions(cands: list[ModelCandidate], news: list[NewsItem]) -> None:
         for n, text in titles:
             if any(re.search(rf"(?<![a-z0-9]){re.escape(k)}", text) for k in keys):
                 c.mentions.append(n.title)
+                c.mention_urls.append(n.url)
 
 
 def score(c: ModelCandidate, lookback_days: int) -> float:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from .. import http
 from ..models import ModelCandidate
@@ -18,6 +19,24 @@ MOE_MARKERS = ("moe", "gpt_oss", "gptoss", "deepseek_v2", "deepseek_v3", "deepse
 SKIP_MARKERS = ("gguf", "awq", "gptq", "exl2", "mlx", "-fp8", "-int4", "-int8", "bnb-4bit", "-quant")
 
 log = logging.getLogger(__name__)
+
+
+def summarise_card(md: str, max_chars: int = 600) -> str:
+    """First real prose paragraph of a model card: skips front matter, headings, badges, tables, HTML."""
+    md = re.sub(r"\A---\n.*?\n---\n", "", md, flags=re.S)
+    md = re.sub(r"<!--.*?-->", "", md, flags=re.S)
+    md = re.sub(r"```.*?```", "", md, flags=re.S)
+    for para in re.split(r"\n\s*\n", md):
+        lines = [ln.strip() for ln in para.strip().splitlines()]
+        if not lines or lines[0].startswith(("#", "|", "<", "![", "[![", ">", "- ", "* ", "1. ", "---")):
+            continue
+        text = " ".join(lines)
+        text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text)          # images
+        text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)       # links -> text
+        text = re.sub(r"<[^>]+>|[*_`]{1,3}", "", text).strip()
+        if len(text) >= 80:
+            return text if len(text) <= max_chars else text[: max_chars].rsplit(" ", 1)[0] + "…"
+    return ""
 
 
 class HuggingFace:
@@ -110,6 +129,18 @@ class HuggingFace:
                 continue
             c.has_gguf = bool(hits)
 
+    def fetch_summaries(self, cands: list[ModelCandidate]) -> None:
+        """Read each shown model's card (README) for a plain-language 'what it is' paragraph."""
+        for c in cands:
+            if c.source != "huggingface" or c.summary:
+                continue
+            try:
+                md = http.get(f"https://huggingface.co/{c.repo_id}/raw/main/README.md", headers=self.headers,
+                              retries=1).decode("utf-8", "replace")
+            except http.FetchError:
+                continue  # gated or missing card: the profile page just has less to say
+            c.summary = summarise_card(md)
+
     @staticmethod
     def _to_candidate(r: dict, category: str) -> ModelCandidate:
         rid = r["id"]
@@ -125,6 +156,14 @@ class HuggingFace:
         st = r.get("safetensors") or {}
         if st.get("total"):
             total = round(st["total"] / 1e9, 2)
+        benchmarks = []
+        for entry in card.get("model-index") or []:
+            for res in (entry or {}).get("results") or []:
+                ds = (res.get("dataset") or {}).get("name") or (res.get("dataset") or {}).get("type") or ""
+                for m in res.get("metrics") or []:
+                    if isinstance(m.get("value"), (int, float)) and ds:
+                        benchmarks.append({"benchmark": str(ds), "metric": str(m.get("name") or m.get("type") or ""),
+                                           "value": round(float(m["value"]), 2)})
         conf = r.get("config") or {}
         arch = " ".join([str(conf.get("model_type", "")), *map(str, conf.get("architectures") or [])]).lower()
         return ModelCandidate(
@@ -135,5 +174,5 @@ class HuggingFace:
             likes=int(r.get("likes") or 0), downloads=int(r.get("downloads") or 0),
             trending=float(r.get("trendingScore") or 0), created=iso_date(r.get("createdAt")),
             updated=iso_date(r.get("lastModified")), has_gguf="gguf" in tags,
-            pipeline_tag=r.get("pipeline_tag") or "", tags=tags,
+            pipeline_tag=r.get("pipeline_tag") or "", tags=tags, benchmarks=benchmarks[:20],
         )

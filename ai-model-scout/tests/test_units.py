@@ -116,6 +116,35 @@ class DotEnv(unittest.TestCase):
             self.assertNotIn("HF_TOKEN", os.environ)
 
 
+class GoodFor(unittest.TestCase):
+    def mk(self, rid, category="llm", **kw):
+        return ModelCandidate(repo_id=rid, category=category, source="huggingface", url="", **kw)
+
+    def test_llm_heuristics(self):
+        from scout.profile import good_for
+        self.assertEqual(good_for(self.mk("Qwen/Qwen3-Coder-30B-A3B-Instruct")), ["Coding"])
+        self.assertIn("Vision", good_for(self.mk("x/Thing-VL-8B", pipeline_tag="image-text-to-text")))
+        self.assertIn("Writing", good_for(self.mk("jialinyyzz/humanizer")))
+        self.assertIn("Small & fast", good_for(self.mk("x/Tiny-1B", params_b=1.0)))
+        self.assertEqual(good_for(self.mk("x/Plain-27B")), ["General assistant"])
+        self.assertEqual(good_for(self.mk("x/Model-7B-Base"))[0], "Base model (for fine-tuning)")
+
+    def test_ratings_win(self):
+        from scout.profile import good_for, overall
+        rating = {"scores": {"coding": 5, "reasoning": 4, "writing": 2, "vision": 0}}
+        self.assertEqual(good_for(self.mk("x/Plain-27B"), rating), ["Coding", "Reasoning & maths"])
+        self.assertEqual(overall(rating), 3.7)
+
+    def test_music(self):
+        from scout.profile import good_for
+        self.assertEqual(good_for(self.mk("facebookresearch/demucs", "music_analysis",
+                                          description="Music source separation")), ["Stem separation"])
+        self.assertIn("Audio → MIDI", good_for(self.mk("spotify/basic-pitch", "music_score",
+                                                      description="audio to midi transcription")))
+        self.assertIn("Full songs with vocals", good_for(self.mk("ACE-Step/ACE-Step-v1-3.5B", "music_generation",
+                                                                 tags=["text-to-music", "song", "lyrics"])))
+
+
 class Markdown(unittest.TestCase):
     def test_basic(self):
         h = md_to_html("## Head\n\n- **Bold** [link](https://x.y)\n- two\n\nPara <b>")

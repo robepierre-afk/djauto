@@ -25,6 +25,23 @@ report are marked **NEW**. When the report is ready it can also send you a Teleg
 | arXiv | New music generation, transcription and OMR research | No |
 | Claude (optional) | A written briefing that searches the web for current benchmarks (LMArena, Artificial Analysis…), compares the best open models with Claude and ChatGPT, and gives picks for your machine | `ANTHROPIC_API_KEY` |
 
+### "Good for" and model profile pages
+
+Every model in the report has a **Good for** column (e.g. *Coding · Reasoning & maths*, *Full songs
+with vocals*, *Stem separation*). Once a model has been rated, this comes from its strongest scores
+(4–5); before that, it's worked out from the model's name, tags and model card.
+
+Clicking a model opens its **profile page** (`reports/models/`). The page shows:
+- what the model is, in the words of its own model card
+- whether and how it runs on your machine
+- its capability ratings, drawn as bars against the best paid product in each area
+- what it excels at and where it falls short
+- benchmarks the developer has published
+- this week's videos and posts about it
+- links to download it and to YouTube reviews, Reddit discussion and the leaderboards
+
+Profiles work without an API key; only the ratings section needs `ANTHROPIC_API_KEY`.
+
 ### Industry rating matrix
 
 With an `ANTHROPIC_API_KEY` set, the report opens with a rating matrix. It scores the top models

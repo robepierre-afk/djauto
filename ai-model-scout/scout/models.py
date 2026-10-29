@@ -27,6 +27,10 @@ class ModelCandidate:
     description: str = ""
     tags: list[str] = field(default_factory=list)
     mentions: list[str] = field(default_factory=list)  # titles of videos/posts that mention it
+    mention_urls: list[str] = field(default_factory=list)
+    summary: str = ""                 # plain-language "what it is", from the model card / repo
+    benchmarks: list[dict] = field(default_factory=list)  # self-reported results from the model card
+    good_for: list[str] = field(default_factory=list)     # e.g. ["Coding", "Reasoning"]
     watchlisted: bool = False
     # Filled in later
     score: float = 0.0
